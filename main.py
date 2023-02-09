@@ -24,10 +24,11 @@ r1 = 0.5
 r2 = 0.25
 
 Epoch = 1
-learning_rate = 0.0001
+learning_rate = 0.001
+batch = 24
 
-filepath_train = "small.mp4"
-filepath_gt = "sunny.mp4"
+filepath_train = "E:/test(1).mp4"
+filepath_gt = "E:/big.mp4"
 
 #check if cuda is available
 if torch.cuda.is_available():
@@ -46,41 +47,49 @@ def get_videodetails(video_path):
     capture.release()
     return framecount, width, height, fps
 
-def video_to_tensor(video_path,frame_number):
+videoFrameCount_train,videoWidth_train,videoHeight_train,videoFPS_train = get_videodetails(filepath_train)
+videoFrameCount_gt,videoWidth_gt,videoHeight_gt,videoFPS_gt = get_videodetails(filepath_gt)
+batch_train = math.ceil(videoFrameCount_train/batch)
+batch_gt = math.ceil(videoFrameCount_gt/batch)
+def video_to_tensor(video_path,batch_number):
     capture = cv2.VideoCapture(video_path)
-    capture.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-    out, frame = capture.read()
+    framecount = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    #batch_count = math.ceil(framecount/batch)
+    frame_r_list = []
+    frame_g_list = []
+    frame_b_list = []
+    for i in range(batch):
+        frame_index = batch * batch_number + i
+        if frame_index >= framecount:
+            print("Frame end reached!!!")
+            break
+        capture.set(cv2.CAP_PROP_POS_FRAMES,frame_index)
 
-    # Convert the frame to a pytorch tensor and split it into the three channels
-    #make it channel,width,height
+        out, frame = capture.read()
+        frame = torch.from_numpy(frame).permute(2, 0, 1).float().to(device)
     
-    frame = torch.from_numpy(frame).permute(2, 0, 1).float()
+        frame_r = frame[0].unsqueeze(0)
+        frame_g = frame[1].unsqueeze(0)
+        frame_b = frame[2].unsqueeze(0)
+        if not out:
+            print("Error reading frame")
+            #Add save of models just in case of an error mid training
+        frame_r_list.append(frame_r)
+        frame_g_list.append(frame_g)
+        frame_b_list.append(frame_b)
+    frame_r = torch.cat(frame_r_list, dim=0).to(device)
+    frame_g = torch.cat(frame_g_list, dim=0).to(device)
+    frame_b = torch.cat(frame_b_list, dim=0).to(device)
     
-    frame_r = frame[0].unsqueeze(0)
-    frame_g = frame[1].unsqueeze(0)
-    frame_b = frame[2].unsqueeze(0)
-    if not out:
-        print("Error reading frame")
     capture.release()
     return frame_r,frame_g,frame_b
 
 #tenso = video_to_tensor("plane2.mp4",2000)
 #save_image(tenso,"E:/test/frame.jpg")
 
-tmp1 = get_videodetails(filepath_train)
-tmp2 = get_videodetails(filepath_gt)
 
-videoFrameCount_train = tmp1[0]
-videoWidth_train = tmp1[1]
-videoHeight_train = tmp1[2]
-videoFPS_train = tmp1[3]
 
-videoFrameCount_gt = tmp2[0]
-videoWidth_gt = tmp2[1]
-videoHeight_gt = tmp2[2]
-videoFPS_gt = tmp2[3]
-
-torch.autograd.set_detect_anomaly(True)
+#torch.autograd.set_detect_anomaly(True)
     
 class LERN(nn.Module):
     def __init__(self):
@@ -125,10 +134,10 @@ class LERN(nn.Module):
         self.conv12 = nn.Conv2d(round(16*r2),16,kernel_size=3,stride=1,padding=1)
         #
 
-        self.conv13 = nn.Conv2d(16,8,kernel_size=3,stride=1,padding=1,groups=round(r**2))
-        self.conv14 = nn.Conv2d(8,round(r**4),kernel_size=3,stride=1,padding=1,groups=round(r**2))
-        #self.conv13 = nn.Conv2d(16,32,kernel_size=3,stride=1,padding=1,groups=round(r**2))
-        #self.conv14 = nn.Conv2d(32,round(r**4),kernel_size=3,stride=1,padding=1,groups=round(r**2))
+        #self.conv13 = nn.Conv2d(16,8,kernel_size=3,stride=1,padding=1,groups=round(r**2))
+        #self.conv14 = nn.Conv2d(8,round(r**4),kernel_size=3,stride=1,padding=1,groups=round(r**2))
+        self.conv13 = nn.Conv2d(16,32,kernel_size=3,stride=1,padding=1,groups=round(r**2))
+        self.conv14 = nn.Conv2d(32,round(r**4),kernel_size=3,stride=1,padding=1,groups=round(r**2))
 
         #nets
         self.conv15 = nn.Conv2d(1,round(r**2),kernel_size=3,stride=1,padding=1)
@@ -208,61 +217,51 @@ start = time.time()
 
 def trainingRED():
     net = LERN()
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+    optimizer = optim.Rprop(net.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
     net.to(device)
     hidden = net.init_hidden().to(device)
     for i in range(Epoch): 
         print("Epoch: "+ str(i))   
-        
-        for x in range(videoFrameCount_train-1):
-            #red
+        batch_count = math.ceil(videoFrameCount_train/batch)
+        for x in range(batch_count):
             red_train,green_train,blue_train = video_to_tensor(filepath_train,x)
-            red_train1,green_train1,blue_train1 = video_to_tensor(filepath_train,x+1)
+            #red_train1,green_train1,blue_train1 = video_to_tensor(filepath_train,x+1)
             red_gt,green_gt,blue_gt = video_to_tensor(filepath_gt,x)
-            #set gradients to none
-            optimizer.zero_grad()
-            output,hidden = net(red_train.to(device),red_train1.to(device),hidden.detach())
-            loss = criterion(output, red_gt.to(device))
-            loss.backward()
-            optimizer.step()
-            #print(" Percentage done: "+str(x/videoFrameCount_train*100)+"            Time remaining:" + str(round((videoFrameCount_train-x)*(time.time()-start)/(x+1)/60)) + " minutes")
+            
+            for z in range(red_train.shape[0]-1):
+                
+                optimizer.zero_grad()
+                output,hidden = net(red_train[z].to(device).unsqueeze(0),red_train[z+1].to(device).unsqueeze(0),hidden.detach())
+                loss = criterion(output, red_gt[z].to(device).unsqueeze(0))
+                loss.backward()
+                optimizer.step()
 
-
-
-
-        
     print("done thread Red")
     torch.save(net.state_dict(), "modelRed.pth")    
 
-
-
-
 def trainingGREEN():
     net = LERN()
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+    optimizer = optim.Rprop(net.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
     net.to(device)
     hidden = net.init_hidden().to(device)
     for i in range(Epoch): 
         print("Epoch: "+ str(i))   
         
-        for x in range(videoFrameCount_train-1):
-            #red
+        batch_count = math.ceil(videoFrameCount_train/batch)
+        for x in range(batch_count):
             red_train,green_train,blue_train = video_to_tensor(filepath_train,x)
-            red_train1,green_train1,blue_train1 = video_to_tensor(filepath_train,x+1)
+            #red_train1,green_train1,blue_train1 = video_to_tensor(filepath_train,x+1)
             red_gt,green_gt,blue_gt = video_to_tensor(filepath_gt,x)
-            optimizer.zero_grad()
-            output,hidden = net(green_train.to(device),green_train1.to(device),hidden.detach())
-            loss = criterion(output, green_gt.to(device))
-            loss.backward()
-            optimizer.step()
+            for z in range(green_train.shape[0]-1):
+            
 
-            #print(" Percentage done: "+str(x/videoFrameCount_train*100)+"            Time remaining:" + str(round((videoFrameCount_train-x)*(time.time()-start)/(x+1)/60)) + " minutes")
-
-
-
-
+                optimizer.zero_grad()
+                output,hidden = net(green_train[z].to(device).unsqueeze(0),green_train[z+1].to(device).unsqueeze(0),hidden.detach())
+                loss = criterion(output, green_gt[z].to(device).unsqueeze(0))
+                loss.backward()
+                optimizer.step()
 
     print("done thread Green")
     torch.save(net.state_dict(), "modelGreen.pth")    
@@ -271,36 +270,32 @@ def trainingGREEN():
 
 def trainingBLUE():
     net = LERN()
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+    optimizer = optim.Rprop(net.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
     net.to(device)
     hidden = net.init_hidden().to(device)
     for i in range(Epoch): 
         print("Epoch: "+ str(i))   
         
-        for x in range(videoFrameCount_train-1):
-            #red
+        batch_count = math.ceil(videoFrameCount_train/batch)
+        for x in range(batch_count):
             red_train,green_train,blue_train = video_to_tensor(filepath_train,x)
-            red_train1,green_train1,blue_train1 = video_to_tensor(filepath_train,x+1)
+            #red_train1,green_train1,blue_train1 = video_to_tensor(filepath_train,x+1)
             red_gt,green_gt,blue_gt = video_to_tensor(filepath_gt,x)
-            optimizer.zero_grad()
-            output,hidden = net(blue_train.to(device),blue_train1.to(device),hidden.detach())
-            loss = criterion(output, blue_gt.to(device))
-            loss.backward()
-            optimizer.step()
-            print(" Percentage done: "+str(x/videoFrameCount_train*100)+"            Time remaining:" + str(round((videoFrameCount_train-x)*(time.time()-start)/(x+1)/60)) + " minutes"     + "   Error: " + str(loss.item()))
-
-
-        #calcutate psnr
-
-
-        #learning_rate = learning_rate /2
+            for z in range(blue_train.shape[0]-1):
+            
+                optimizer.zero_grad()
+                output,hidden = net(blue_train[z].to(device).unsqueeze(0),blue_train[z+1].to(device).unsqueeze(0),hidden.detach())
+                loss = criterion(output, blue_gt[z].to(device).unsqueeze(0))
+                loss.backward()
+                optimizer.step()
+            print(" Percentage done: "+str(x/batch_count*100)+"            Time remaining:" + str(round((batch_count-x)*(time.time()-start)/(x+1)/60)*Epoch) + " minutes"     + "   Error: " + str(loss.item()))
     print("done thread Blue")
     torch.save(net.state_dict(), "modelBlue.pth")    
 
 #forwards pass and save video to file
 def testing():
-    device = torch.device("cpu")
+    #device = torch.device("")
     net_red = LERN()
     net_red.load_state_dict(torch.load("modelRed.pth"))
     net_red.to(device)
@@ -314,32 +309,39 @@ def testing():
     net_blue.to(device)
     hidden_blue = net_blue.init_hidden().to(device)
     
-    out = cv2.VideoWriter('output.mp4',cv2.VideoWriter_fourcc(*'mp4v'), videoFPS_train, (videoWidth_train*r,videoHeight_train*r))
-    for x in range(videoFrameCount_train-1):
+    out = cv2.VideoWriter('E:/output.mp4',cv2.VideoWriter_fourcc(*'mp4v'), videoFPS_train, (videoWidth_train*r,videoHeight_train*r))
+    batch_count = math.ceil(videoFrameCount_train/batch)
+    
+    for x in range(batch_count):
 
         red_train,green_train,blue_train = video_to_tensor(filepath_train,x)
-        red_train1,green_train1,blue_train1 = video_to_tensor(filepath_train,x+1)
+        #red_train1,green_train1,blue_train1 = video_to_tensor(filepath_train,x+1)
         
-        output_red,hidden_red = net_red(red_train.to(device),red_train1.to(device),hidden_red.detach())
-        output_green,hidden_green = net_green(green_train.to(device),green_train1.to(device),hidden_green.detach())
-        output_blue,hidden_blue = net_blue(blue_train.to(device),blue_train1.to(device),hidden_blue.detach())
+        for z in range(red_train.shape[0]-1):
+            output_red,hidden_red = net_red(red_train[z].to(device).unsqueeze(0),red_train[z+1].to(device).unsqueeze(0),hidden_red.detach())
+            output_green,hidden_green = net_green(green_train[z].to(device).unsqueeze(0),green_train[z+1].to(device).unsqueeze(0),hidden_green.detach())
+            output_blue,hidden_blue = net_blue(blue_train[z].to(device).unsqueeze(0),blue_train[z+1].to(device).unsqueeze(0),hidden_blue.detach())
         
-        output_red = output_red.detach().numpy()
-        output_green = output_green.detach().numpy()
-        output_blue = output_blue.detach().numpy()
-        #save as mp4 video using cv2
-        output = np.zeros((videoHeight_train*r,videoWidth_train*r,3), np.uint8)
-        output[:,:,0] = output_red
-        output[:,:,1] = output_green
-        output[:,:,2] = output_blue
-        out.write(output)
+            output_red =  output_red.detach().cpu().numpy()
+            output_green = output_green.detach().cpu().numpy()
+            output_blue = output_blue.detach().cpu().numpy()
+            #save as mp4 video using cv2
+            output = np.zeros((videoHeight_train*r,videoWidth_train*r,3), np.uint8)
+            output[:,:,0] = output_red
+            output[:,:,1] = output_green
+            output[:,:,2] = output_blue
+            out.write(output)
         #display video
-        cv2.imshow('frame',output)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+            cv2.imshow('frame',output)
+            cv2.waitKey(1)
+            
+            #if cv2.waitKey(1) & 0xFF == ord('q'):
+                #break
         
-        print(" Percentage done: "+str(x/videoFrameCount_train*100)+"            Time remaining:" + str(round((videoFrameCount_train-x)*(time.time()-start)/(x+1)/60)) + " minutes")
+        print(" Percentage done: "+str(x/batch_count*100)+"            Time remaining:" + str(round((batch_count-x)*(time.time()-start)/(x+1)/60)) + " minutes")
         
+
+    
 
 #run thread for each colour
 #t1 = threading.Thread(target=trainingRED)
