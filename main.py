@@ -1,35 +1,30 @@
 import torch
 from torch import nn
-from PIL import Image
 import torchvision
-import torchvision.transforms as T
-import torchvision.transforms.functional as TF
 import numpy as np
 from torchvision.utils import save_image
-from matplotlib import pyplot as plt
-import cv2 as cv2
 import torchvision.transforms as transforms
-import matplotlib
+from torchvision.datasets import ImageFolder
 import math
 import torch.optim as optim
-import av
 import time
 import threading
-matplotlib.use('Agg')
+import cv2 as cv2
+import tkinter as tk
+from tkinter import filedialog
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
-r = 2
+r = 4
 q = 0.75
 p = 0.75
 r1 = 0.5
 r2 = 0.25
 
-Epoch = 1
-learning_rate = 0.001
-batch = 24
-
-filepath_train = "E:/test(1).mp4"
-filepath_gt = "E:/big.mp4"
-
+video = 204
+learning_rate = 0.00001
+epoch = 10
+trainloader = None
 #check if cuda is available
 if torch.cuda.is_available():
     device = torch.device('cuda')
@@ -37,6 +32,7 @@ if torch.cuda.is_available():
 else:
     device = torch.device('cpu')
     print("Using CPU")
+
 
 def get_videodetails(video_path):
     capture = cv2.VideoCapture(video_path)
@@ -47,10 +43,6 @@ def get_videodetails(video_path):
     capture.release()
     return framecount, width, height, fps
 
-videoFrameCount_train,videoWidth_train,videoHeight_train,videoFPS_train = get_videodetails(filepath_train)
-videoFrameCount_gt,videoWidth_gt,videoHeight_gt,videoFPS_gt = get_videodetails(filepath_gt)
-batch_train = math.ceil(videoFrameCount_train/batch)
-batch_gt = math.ceil(videoFrameCount_gt/batch)
 def video_to_tensor(video_path,batch_number):
     capture = cv2.VideoCapture(video_path)
     framecount = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -58,8 +50,8 @@ def video_to_tensor(video_path,batch_number):
     frame_r_list = []
     frame_g_list = []
     frame_b_list = []
-    for i in range(batch):
-        frame_index = batch * batch_number + i
+    for i in range(20):
+        frame_index = 20 * batch_number + i
         if frame_index >= framecount:
             print("Frame end reached!!!")
             break
@@ -84,9 +76,19 @@ def video_to_tensor(video_path,batch_number):
     capture.release()
     return frame_r,frame_g,frame_b
 
-#tenso = video_to_tensor("plane2.mp4",2000)
-#save_image(tenso,"E:/test/frame.jpg")
+tf = transforms = transforms.Compose([
+    transforms.ToTensor(),  
+    #transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
+])
 
+def fetchdata(lr,hr,batch,shuffle):
+    
+    trainsetLR = ImageFolder(root=lr, transform=tf)
+    trainsetHR = ImageFolder(root=hr, transform=tf)
+    print("Loading Training set...")
+    trainload = torch.utils.data.DataLoader(list(zip(trainsetLR,trainsetHR)),batch_size=batch, shuffle=shuffle)
+    print("Done loading data :D")
+    return trainload
 
 
 #torch.autograd.set_detect_anomaly(True)
@@ -94,12 +96,11 @@ def video_to_tensor(video_path,batch_number):
 class LERN(nn.Module):
     def __init__(self):
         super().__init__()
-        #self.hst = torch.rand(r**4,round(videoHeight_train/r),round(videoWidth_train/r)).to(device)
         
         self.pixel_unshuffle = nn.PixelUnshuffle(r)
         self.pixel_shuffle = nn.PixelShuffle(r)
         self.pixel_shuffle2 = nn.PixelShuffle(r**2)
-        self.conv1 = nn.Conv2d(round(r**2),round(32*q),kernel_size=3,stride=1,padding=1)
+        self.conv1 = nn.ConvTranspose2d(round(r**2),round(32*q),kernel_size=3,stride=1,padding=1)
         #self.concatinate = nn.Concatinate()
 
         #hst-1
@@ -109,7 +110,7 @@ class LERN(nn.Module):
         #sra 32
         self.leaky_relu = nn.LeakyReLU(0.25)
         #3x3dsconv&relu depthwise separable convolution 
-        self.conv3 = nn.Conv2d(32,round(32*r1),kernel_size=3,stride=1,padding=1,groups=round(r**2))
+        self.conv3 = nn.ConvTranspose2d(32,round(32*r1),kernel_size=3,stride=1,padding=1,groups=round(r**2))
         #channel shuffle
         self.channel_shuffle = nn.ChannelShuffle(r)
 
@@ -117,33 +118,33 @@ class LERN(nn.Module):
 
         #attention block
         #self.globalaverage = nn.GlobalAveragePool2d()
-        self.conv5 = nn.Conv2d(32,round(32*r2),kernel_size=3,stride=1,padding=1)
+        self.conv5 = nn.ConvTranspose2d(32,round(32*r2),kernel_size=3,stride=1,padding=1)
 
         self.conv6 = nn.Conv2d(round(32*r2),32,kernel_size=3,stride=1,padding=1)
         self.sigmoid = nn.Sigmoid()
         #
-        self.conv7 = nn.Conv2d(32,round(16*p),kernel_size=3,stride=1,padding=1,groups=round(r**2))
+        self.conv7 = nn.ConvTranspose2d(32,round(16*p),kernel_size=3,stride=1,padding=1)
 
         #lrt+1
         self.conv8 = nn.Conv2d(round(r**2),round(16*(1-p)),kernel_size=3,stride=1,padding=1)
 
         #sra 16
-        self.conv9 = nn.Conv2d(16,round(16*r1),kernel_size=3,stride=1,padding=1,groups=round(r**2))
-        self.conv10 = nn.Conv2d(round(16*r1),16,kernel_size=3,stride=1,padding=1,groups=round(r**2))
-        self.conv11 = nn.Conv2d(16,round(16*r2),kernel_size=3,stride=1,padding=1)
+        self.conv9 = nn.ConvTranspose2d(16,round(16*r1),kernel_size=3,stride=1,padding=1)
+        self.conv10 = nn.Conv2d(round(16*r1),16,kernel_size=3,stride=1,padding=1)
+        self.conv11 = nn.ConvTranspose2d(16,round(16*r2),kernel_size=3,stride=1,padding=1)
         self.conv12 = nn.Conv2d(round(16*r2),16,kernel_size=3,stride=1,padding=1)
         #
 
-        #self.conv13 = nn.Conv2d(16,8,kernel_size=3,stride=1,padding=1,groups=round(r**2))
-        #self.conv14 = nn.Conv2d(8,round(r**4),kernel_size=3,stride=1,padding=1,groups=round(r**2))
-        self.conv13 = nn.Conv2d(16,32,kernel_size=3,stride=1,padding=1,groups=round(r**2))
-        self.conv14 = nn.Conv2d(32,round(r**4),kernel_size=3,stride=1,padding=1,groups=round(r**2))
+        #self.conv13 = nn.ConvTranspose2d(16,8,kernel_size=3,stride=1,padding=1,groups=round(r**2))
+        #self.conv14 = nn.ConvTranspose2d(8,round(r**4),kernel_size=3,stride=1,padding=1,groups=round(r**2))
+        self.conv13 = nn.ConvTranspose2d(16,8,kernel_size=3,stride=1,padding=1)
+        self.conv14 = nn.Conv2d(8,round(r**4),kernel_size=3,stride=1,padding=1)
 
         #nets
-        self.conv15 = nn.Conv2d(1,round(r**2),kernel_size=3,stride=1,padding=1)
+        self.conv15 = nn.ConvTranspose2d(1,round(r**2),kernel_size=3,stride=1,padding=1)
 
         
-    def init_hidden(self):
+    def init_hidden(self,videoHeight_train,videoWidth_train):
         return torch.rand(r**4,round(videoHeight_train/r),round(videoWidth_train/r)).to(device)    
     def forward(self, x,x1,htt):        
         #hstt = self.hst
@@ -209,119 +210,98 @@ class LERN(nn.Module):
         #self.hst = hstt
 
         return x,hstt
-#prepare loader
-#input = input.to(device)
+
 start = time.time()
-
-
-
 def trainingRED():
     net = LERN()
-    optimizer = optim.Rprop(net.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
     net.to(device)
-    hidden = net.init_hidden().to(device)
-    for i in range(Epoch): 
-        print("Epoch: "+ str(i))   
-        batch_count = math.ceil(videoFrameCount_train/batch)
-        for x in range(batch_count):
-            red_train,green_train,blue_train = video_to_tensor(filepath_train,x)
-            #red_train1,green_train1,blue_train1 = video_to_tensor(filepath_train,x+1)
-            red_gt,green_gt,blue_gt = video_to_tensor(filepath_gt,x)
-            
-            for z in range(red_train.shape[0]-1):
-                
-                optimizer.zero_grad()
-                output,hidden = net(red_train[z].to(device).unsqueeze(0),red_train[z+1].to(device).unsqueeze(0),hidden.detach())
-                loss = criterion(output, red_gt[z].to(device).unsqueeze(0))
+    hidden = net.init_hidden(32,32).to(device)
+    for y in range(epoch):
+
+        for trainLR,trainHR in trainloader:  
+            optimizer.zero_grad()
+            trainLR = trainLR[0][:, 0, :, :].to(device)
+            trainHR = trainHR[0][:,0,:,:].to(device)
+            avrgloss = 0
+            for i in range(trainLR.shape[0]-1):
+                output,hidden = net(trainLR[i].unsqueeze(0),trainLR[i+1].unsqueeze(0),hidden.detach())
+                loss = criterion(output, trainHR[i].unsqueeze(0))
                 loss.backward()
                 optimizer.step()
-
     print("done thread Red")
-    torch.save(net.state_dict(), "modelRed.pth")    
+    torch.save(net.state_dict(), "modelRed.pth")
+    print("saved the red model")    
 
 def trainingGREEN():
     net = LERN()
-    optimizer = optim.Rprop(net.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
     net.to(device)
-    hidden = net.init_hidden().to(device)
-    for i in range(Epoch): 
-        print("Epoch: "+ str(i))   
-        
-        batch_count = math.ceil(videoFrameCount_train/batch)
-        for x in range(batch_count):
-            red_train,green_train,blue_train = video_to_tensor(filepath_train,x)
-            #red_train1,green_train1,blue_train1 = video_to_tensor(filepath_train,x+1)
-            red_gt,green_gt,blue_gt = video_to_tensor(filepath_gt,x)
-            for z in range(green_train.shape[0]-1):
-            
-
-                optimizer.zero_grad()
-                output,hidden = net(green_train[z].to(device).unsqueeze(0),green_train[z+1].to(device).unsqueeze(0),hidden.detach())
-                loss = criterion(output, green_gt[z].to(device).unsqueeze(0))
+    hidden = net.init_hidden(32,32).to(device)
+    x = 0 
+    for y in range(epoch):
+        for trainLR,trainHR in trainloader:  
+            optimizer.zero_grad()
+            trainLR = trainLR[0][:, 1, :, :].to(device)
+            trainHR = trainHR[0][:,1,:,:].to(device)
+            for i in range(trainLR.shape[0]-1):
+                output,hidden = net(trainLR[i].unsqueeze(0),trainLR[i+1].unsqueeze(0),hidden.detach())
+                loss = criterion(output, trainHR[i].unsqueeze(0))
                 loss.backward()
                 optimizer.step()
-
-    print("done thread Green")
-    torch.save(net.state_dict(), "modelGreen.pth")    
-
+    print("done thread green")
+    torch.save(net.state_dict(), "modelGreen.pth")
+    print("saved the green model")   
     
 
 def trainingBLUE():
     net = LERN()
-    optimizer = optim.Rprop(net.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
     net.to(device)
-    hidden = net.init_hidden().to(device)
-    for i in range(Epoch): 
-        print("Epoch: "+ str(i))   
-        
-        batch_count = math.ceil(videoFrameCount_train/batch)
-        for x in range(batch_count):
-            red_train,green_train,blue_train = video_to_tensor(filepath_train,x)
-            #red_train1,green_train1,blue_train1 = video_to_tensor(filepath_train,x+1)
-            red_gt,green_gt,blue_gt = video_to_tensor(filepath_gt,x)
-            for z in range(blue_train.shape[0]-1):
-            
-                optimizer.zero_grad()
-                output,hidden = net(blue_train[z].to(device).unsqueeze(0),blue_train[z+1].to(device).unsqueeze(0),hidden.detach())
-                loss = criterion(output, blue_gt[z].to(device).unsqueeze(0))
+    hidden = net.init_hidden(32,32).to(device)
+    x = 0 
+    for y in range(epoch):
+        for trainLR,trainHR in trainloader:  
+            optimizer.zero_grad()
+            trainLR = trainLR[0][:, 2, :, :].to(device)
+            trainHR = trainHR[0][:,2,:,:].to(device)
+            for i in range(trainLR.shape[0]-1):
+                output,hidden = net(trainLR[i].unsqueeze(0),trainLR[i+1].unsqueeze(0),hidden.detach())
+                loss = criterion(output, trainHR[i].unsqueeze(0))
                 loss.backward()
                 optimizer.step()
-            print(" Percentage done: "+str(x/batch_count*100)+"            Time remaining:" + str(round((batch_count-x)*(time.time()-start)/(x+1)/60)*Epoch) + " minutes"     + "   Error: " + str(loss.item()))
     print("done thread Blue")
-    torch.save(net.state_dict(), "modelBlue.pth")    
+    torch.save(net.state_dict(), "modelBlue.pth")
+    print("saved the blue model")   
 
-#forwards pass and save video to file
 def testing():
-    #device = torch.device("")
+    filepath_train = "C:/Users/g123lietuvis5/Desktop/LR/Vid(0).mp4"
+    videoFrameCount_train,videoWidth_train,videoHeight_train,videoFPS_train = get_videodetails(filepath_train)
     net_red = LERN()
     net_red.load_state_dict(torch.load("modelRed.pth"))
     net_red.to(device)
-    hidden_red = net_red.init_hidden().to(device)
+    hidden_red = net_red.init_hidden(videoHeight_train,videoWidth_train).to(device)
     net_green = LERN()
     net_green.load_state_dict(torch.load("modelGreen.pth"))
     net_green.to(device)
-    hidden_green = net_green.init_hidden().to(device)
+    hidden_green = net_green.init_hidden(videoHeight_train,videoWidth_train).to(device)
     net_blue = LERN()
     net_blue.load_state_dict(torch.load("modelBlue.pth"))
     net_blue.to(device)
-    hidden_blue = net_blue.init_hidden().to(device)
+    hidden_blue = net_blue.init_hidden(videoHeight_train,videoWidth_train).to(device)
     
-    out = cv2.VideoWriter('E:/output.mp4',cv2.VideoWriter_fourcc(*'mp4v'), videoFPS_train, (videoWidth_train*r,videoHeight_train*r))
-    batch_count = math.ceil(videoFrameCount_train/batch)
+    out = cv2.VideoWriter('C:/Users/g123lietuvis5/Desktop/LR/output.mp4',cv2.VideoWriter_fourcc(*'mp4v'), videoFPS_train, (videoWidth_train*r,videoHeight_train*r))
+    batch_count = math.ceil(videoFrameCount_train/20)
     
     for x in range(batch_count):
-
         red_train,green_train,blue_train = video_to_tensor(filepath_train,x)
-        #red_train1,green_train1,blue_train1 = video_to_tensor(filepath_train,x+1)
-        
         for z in range(red_train.shape[0]-1):
             output_red,hidden_red = net_red(red_train[z].to(device).unsqueeze(0),red_train[z+1].to(device).unsqueeze(0),hidden_red.detach())
             output_green,hidden_green = net_green(green_train[z].to(device).unsqueeze(0),green_train[z+1].to(device).unsqueeze(0),hidden_green.detach())
             output_blue,hidden_blue = net_blue(blue_train[z].to(device).unsqueeze(0),blue_train[z+1].to(device).unsqueeze(0),hidden_blue.detach())
-        
             output_red =  output_red.detach().cpu().numpy()
             output_green = output_green.detach().cpu().numpy()
             output_blue = output_blue.detach().cpu().numpy()
@@ -334,15 +314,137 @@ def testing():
         #display video
             cv2.imshow('frame',output)
             cv2.waitKey(1)
-            
-            #if cv2.waitKey(1) & 0xFF == ord('q'):
-                #break
-        
-        print(" Percentage done: "+str(x/batch_count*100)+"            Time remaining:" + str(round((batch_count-x)*(time.time()-start)/(x+1)/60)) + " minutes")
-        
 
+#GUI part of the code ----------------------------------------------------------------------------
+def openFolder(inp):
+    inp.delete("1.0", tk.END)
+    
+    file = filedialog.askdirectory()
+    inp.insert(tk.END, file)
+    
+def leaveandclose(page1,page2):
+    
+    page2.deiconify()
+    page1.destroy()
+    
+def generate_plot():
+    figure = Figure(figsize=(5, 5), dpi=100, facecolor="#FF9E3D", edgecolor="#FF9E3D")
+    x = [1,2,3,4,5]
+    y = [1,4,9,16,25]
+    figure.add_subplot(111).plot(x, y)
+    return figure
+def plot_update():
+    fig = generate_plot()
+    for widget in right_frame.winfo_children():
+        widget.destroy()
+    
+    canvas = FigureCanvasTkAgg(fig, master=right_frame)
+    canvas.draw()
+    canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+    
+    
+def page_train():
+    print("Preparing to train x3")
+    Main_window.withdraw()
+    
+    Train_window = tk.Toplevel()
+    Train_window.title("Training the Lern network")
+    Train_window.configure(background="#FF9E3D")
+    top_frame = tk.Frame(Train_window, width=700, height=100,background="#FF9E3D")
+    top_frame.pack(side=tk.TOP, fill=tk.BOTH)
+    
+    left_frame = tk.Frame(Train_window, width=350, height=400,background="#FF9E3D")
+    left_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=10, pady=0)
+    global right_frame
+    right_frame = tk.Frame(Train_window, width=350, height=400,background="#FF9E3D")
+    right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=10, pady=0)
+    
+    backbutton_frame = tk.Frame(top_frame, width=200, height=50,background="#FF9E3D")
+    backbutton_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=10, pady=0)
+    
+    train_frame = tk.Frame(top_frame, width=700, height=50,background="#FF9E3D")
+    train_frame.pack(side=tk.TOP, fill=tk.BOTH, padx=10, pady=0)
+    
+    test_frame = tk.Frame(top_frame, width=700, height=50,background="#FF9E3D")
+    test_frame.pack(side=tk.TOP, fill=tk.BOTH, padx=10, pady=0)
+    
+    #backbutton_frame.pack_propagate(0)
+    button_back = tk.Button(backbutton_frame, text="Back",font=("Arial", 10, "bold"),background="#B7410E",fg="white", command=lambda:leaveandclose(Train_window,Main_window))
+    button_browseTrain = tk.Button(train_frame, text="Browse",font=("Arial", 10, "bold"),background="#B7410E",fg="white", command=lambda:openFolder(textbox_train))
+    button_browseTest = tk.Button(test_frame, text="Browse",font=("Arial", 10, "bold"),background="#B7410E",fg="white", command=lambda:openFolder(textbox_test))
+    #make a text box
+    textbox_train = tk.Text(train_frame, height=1, width=60,font=("Arial", 14, "bold"),fg="black")
+    textbox_test = tk.Text(test_frame, height=1, width=60,font=("Arial", 14, "bold"),fg="black")
+    
+    label_Epoch = tk.Label(left_frame, text="Epoch:",font=("Arial", 10, "bold"),background="#FF9E3D",fg="black")
+    label_LearningRate = tk.Label(left_frame, text="LearningRate:",font=("Arial", 10, "bold"),background="#FF9E3D",fg="black")
+    label_Scale = tk.Label(left_frame, text="Scale:",font=("Arial", 10, "bold"),background="#FF9E3D",fg="black")
+    label_BatchSize = tk.Label(left_frame, text="BatchSize:",font=("Arial", 10, "bold"),background="#FF9E3D",fg="black")
+    label_Shuffle = tk.Label(left_frame, text="Shuffle:",font=("Arial", 10, "bold"),background="#FF9E3D",fg="black")
+
+    textbox_Epoch = tk.Text(left_frame, height=1, width=8,font=("Arial", 10, "bold"),fg="black")
+    textbox_LearningRate = tk.Text(left_frame, height=1, width=8,font=("Arial", 10, "bold"),fg="black")
+    textbox_Scale = tk.Text(left_frame, height=1, width=4,font=("Arial", 10, "bold"),fg="black")
+    textbox_BatchSize = tk.Text(left_frame, height=1, width=6,font=("Arial", 10, "bold"),fg="black")
+    checkbox_Shuffle = tk.Checkbutton(left_frame,background="#FF9E3D")
+    button_Train = tk.Button(left_frame, text="Train",height=1,width=10,font=("Arial", 15, "bold"),background="#B7410E",fg="white",command=lambda:plot_update())
+    
+    button_back.pack(side=tk.LEFT, anchor=tk.NW)
+    button_browseTrain.pack(side=tk.RIGHT, anchor=tk.NE)
+    button_browseTest.pack(side=tk.RIGHT,anchor=tk.NE)
+    textbox_test.pack(side=tk.TOP, anchor=tk.N)
+    textbox_train.pack(side=tk.TOP, anchor=tk.N)
+    
+    label_Epoch.grid(row=0, column=0, sticky="W", padx=0, pady=20)
+    textbox_Epoch.grid(row=0, column=1, sticky="E", padx=0, pady=20)
+    label_LearningRate.grid(row=1, column=0, sticky="W", padx=0, pady=20)
+    textbox_LearningRate.grid(row=1, column=1, sticky="E", padx=0, pady=20)
+    label_Scale.grid(row=2, column=0, sticky="W", padx=0, pady=20)
+    textbox_Scale.grid(row=2, column=1, sticky="E", padx=0, pady=20)
+    label_BatchSize.grid(row=3, column=0, sticky="W", padx=0, pady=20)
+    textbox_BatchSize.grid(row=3, column=1, sticky="E", padx=0, pady=20)
+    label_Shuffle.grid(row=4, column=0, sticky="W", padx=0, pady=20)
+    checkbox_Shuffle.grid(row=4, column=1, sticky="E", padx=0, pady=20)
+    button_Train.grid(row=5, column = 3,sticky="W", padx=60, pady=40)
+    
+    plot_update()
+    
+    Train_window.geometry("700x500")
+    
+    
+def page_test():
+    print("Preparing to test x3")
+    Main_window.withdraw()
+    Test_window = tk.Toplevel()
+    Test_window.title("Testing the Lern network")
+    Test_window.configure(background="#FF9E3D")
+    button_back = tk.Button(Test_window, text="Back", command=lambda:leaveandclose(Test_window,Main_window))
+    button_back.pack()
+    Test_window.geometry("700x500")
     
 
+
+def Main():
+    global Main_window
+    
+    Main_window = tk.Tk()
+    
+    Main_window.title("video Super Resolution")
+    label_title = tk.Label(Main_window, text="Video Super Resolution",background="#FF9E3D", fg="white",font=("Arial", 20, "bold"),height=2,width=20)  
+    button_train = tk.Button(Main_window, text="Train the Lern network", font=("Arial", 15, "bold"),background="#B7410E",fg="white",command=page_train)
+    button_test = tk.Button(Main_window, text="Test the Lern network", font=("Arial", 15, "bold"),background="#B7410E",fg="white", command=page_test)
+    label_title.pack()
+    button_train.pack(side=tk.RIGHT)
+    button_test.pack( side=tk.LEFT)
+    
+    #button_train.pack()
+    #button_test.pack()
+    
+    Main_window.geometry("600x300")
+    Main_window.configure(background="#FF9E3D")
+    Main_window.mainloop()
+        
+Main()
 #run thread for each colour
 #t1 = threading.Thread(target=trainingRED)
 #t2 = threading.Thread(target=trainingGREEN)
@@ -357,8 +459,8 @@ def testing():
 #t3.join()
 
 #thread for testing
-t4 = threading.Thread(target=testing)
-t4.start()
-t4.join()
+#t4 = threading.Thread(target=testing)
+#t4.start()
+#t4.join()
 print("done")
 
