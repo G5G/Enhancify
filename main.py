@@ -25,17 +25,13 @@ video = 204
 learning_rate = 0.00001
 epoch = 10
 trainloader = None
+valloader = None
 
 x_train = []
 y_train = []
-x_test = []
-y_test = []
 x_val = []
 y_val = []
 
-trainloc = ""
-testloc = ""
-valloc = ""
 
 #check if cuda is available
 if torch.cuda.is_available():
@@ -93,15 +89,45 @@ tf = transforms = transforms.Compose([
     #transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
 ])
 
-def fetchdata(batch,shuffle):
+def fetchdata(batch,shuffle,learningRate,eepoch,trainlocHR,trainlocLR,vallocHR,vallocLR):
     
-    trainsetLR = ImageFolder(root=trainloc, transform=tf)
-    trainsetHR = ImageFolder(root=testloc, transform=tf)
-    trainsetval = ImageFolder(root=valloc, transform=tf)
+    batch = batch.get("1.0", "end-1c")
+    batch = int(batch)
+    shuffle = shuffle.get()
+    learningRate = learningRate.get("1.0", "end-1c")
+    learningRate = float(learningRate)
+    eepoch = eepoch.get("1.0", "end-1c")
+    eepoch = int(eepoch)
+    trainlocLR = trainlocLR.get("1.0","end-1c")
+    trainlocHR = trainlocHR.get("1.0", "end-1c")
+    vallocHR = vallocHR.get("1.0", "end-1c")
+    vallocLR = vallocLR.get("1.0", "end-1c")
+    trainsetLR = ImageFolder(root=trainlocLR, transform=tf)
+    trainsetHR = ImageFolder(root=trainlocHR, transform=tf)
+    trainsetvalHR = ImageFolder(root=vallocHR, transform=tf)
+    trainsetvalLR = ImageFolder(root = vallocLR, transform = tf)
+    
     print("Loading Training set...")
-    global trainloader
-    trainloader = torch.utils.data.DataLoader(list(zip(trainsetLR,trainsetHR,trainsetval)),batch_size=batch, shuffle=shuffle)
+    global trainloader,valloader,learning_rate,epoch
+    learning_rate = learningRate
+    epoch = eepoch
+    
+    trainloader = torch.utils.data.DataLoader(list(zip(trainsetLR,trainsetHR)),batch_size=batch, shuffle=shuffle)
+    print("Done loading training data... Loading validation set...")
+    valloader = torch.utils.data.DataLoader(list(zip(trainsetvalLR,trainsetvalHR)),batch_size=batch, shuffle=shuffle)
     print("Done loading data :D")
+
+    t1 = threading.Thread(target=trainingRED)
+    t2 = threading.Thread(target=trainingGREEN)
+    t3 = threading.Thread(target=trainingBLUE)
+
+    t1.start()
+    t2.start()
+    t3.start()
+
+    t1.join()
+    t2.join()
+    t3.join()
     
 
 
@@ -234,17 +260,40 @@ def trainingRED():
     hidden = net.init_hidden(32,32).to(device)
     for y in range(epoch):
 
-        for trainLR,trainHR,trainval in trainloader:  
+        Train_loss = 0
+        Val_loss = 0
+        for trainLR,trainHR in trainloader:  
             optimizer.zero_grad()
             trainLR = trainLR[0][:, 0, :, :].to(device)
             trainHR = trainHR[0][:,0,:,:].to(device)
-            trainval = trainval[0][:,0,:,:].to(device)
-            avrgloss = 0
+            trainvalHR = trainvalHR[0][:,0,:,:].to(device)
+            trainvalLR = trainvalLR[0][:,0,:,:].to(device)
             for i in range(trainLR.shape[0]-1):
                 output,hidden = net(trainLR[i].unsqueeze(0),trainLR[i+1].unsqueeze(0),hidden.detach())
                 loss = criterion(output, trainHR[i].unsqueeze(0))
                 loss.backward()
                 optimizer.step()
+                Train_loss += loss
+                #training loss calculated
+        Train_loss = Train_loss/trainLR.shape[0]
+        y_train.append(Train_loss)
+        x_train.append(y)
+
+        with torch.no_grad():
+            for(valLR,valHR) in valloader:
+                valLR = valLR[0][:, 0, :, :].to(device)
+                valHR = valHR[0][:,0,:,:].to(device)
+                for i in range(valLR.shape[0]-1):
+                    output,hidden = net(valLR[i].unsqueeze(0),valLR[i+1].unsqueeze(0),hidden.detach())
+                    loss = criterion(output, valHR[i].unsqueeze(0))
+                    Val_loss += loss
+                    #validation loss calculated
+            Val_loss = Val_loss/valLR.shape[0]
+            y_val.append(Val_loss)
+            x_val.append(y)
+            plot_update()
+
+        
     print("done thread Red")
     torch.save(net.state_dict(), "modelRed.pth")
     print("saved the red model")    
@@ -267,7 +316,7 @@ def trainingGREEN():
                 loss.backward()
                 optimizer.step()
     print("done thread green")
-    torch.save(net.state_dict(), "modelGreen.pth")
+    torch.save(net.state_dict(), "modelGreen.pth") 
     print("saved the green model")   
     
 
@@ -333,24 +382,15 @@ def testing():
 #GUI part of the code ----------------------------------------------------------------------------
 
 
-def openFolder(inp,location):
+def openFolder(inp):
     inp.delete("1.0", tk.END)
     
     file = filedialog.askdirectory()
     inp.insert(tk.END, file)
-    if(location == "train"):
-        global trainloc
-        trainloc = file
-    elif(location == "test"):
-        global testloc
-        testloc = file
-    elif(location == "val"):
-        global valloc
-        valloc = file
         
 def leaveandclose(page1,page2):
     
-    page2.deiconify()
+    page2.deiconify() 
     page1.destroy()
     
 def generate_plot():
@@ -361,8 +401,6 @@ def generate_plot():
         temp.plot(x_train, y_train, label="Training Loss", color="red")
         temp.xlabel("Epoch")
         temp.ylabel("Loss")
-    if(len(x_test) > 0):
-        temp.plot(x_test, y_test, label="Testing Loss", color="blue")
     if(len(x_val) > 0):
         temp.plot(x_val, y_val, label="Validation Loss", color="green")
     return figure
@@ -376,7 +414,9 @@ def plot_update():
     canvas.draw()
     canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
     
-    
+
+
+
 def page_train():
     print("Preparing to train the Lern network")
     Main_window.withdraw()
@@ -396,26 +436,31 @@ def page_train():
     backbutton_frame = tk.Frame(top_frame, width=200, height=50,background="#FF9E3D")
     backbutton_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=10, pady=0)
     
-    train_frame = tk.Frame(top_frame, width=700, height=50,background="#FF9E3D")
-    train_frame.pack(side=tk.TOP, fill=tk.BOTH, padx=10, pady=0)
+    trainHR_frame = tk.Frame(top_frame, width=700, height=50,background="#FF9E3D")
+    trainHR_frame.pack(side=tk.TOP, fill=tk.BOTH, padx=10, pady=0)
     
-    test_frame = tk.Frame(top_frame, width=700, height=50,background="#FF9E3D")
-    test_frame.pack(side=tk.TOP, fill=tk.BOTH, padx=10, pady=0)
+    trainLR_frame = tk.Frame(top_frame, width=700, height=50,background="#FF9E3D")
+    trainLR_frame.pack(side=tk.TOP, fill=tk.BOTH, padx=10, pady=0)
     
-    val_frame = tk.Frame(top_frame, width=700, height=50,background="#FF9E3D")
-    val_frame.pack(side=tk.TOP, fill=tk.BOTH, padx=10, pady=0)
+    val_frameHR = tk.Frame(top_frame, width=700, height=50,background="#FF9E3D")
+    val_frameHR.pack(side=tk.TOP, fill=tk.BOTH, padx=10, pady=0)
+
+    val_frameLR = tk.Frame(top_frame,width=700,height = 50,background="#FF9E3D")
+    val_frameLR.pack(side=tk.TOP,fill=tk.BOTH,padx=10,pady=0)
     
     #backbutton_frame.pack_propagate(0)
     button_back = tk.Button(backbutton_frame, text="Back",font=("Arial", 10, "bold"),background="#B7410E",fg="white", command=lambda:leaveandclose(Train_window,Main_window))
     
-    button_browseTrain = tk.Button(train_frame, text="Browse",font=("Arial", 10, "bold"),background="#B7410E",fg="white", command=lambda:openFolder(textbox_train,"train"))
-    button_browseTest = tk.Button(test_frame, text="Browse",font=("Arial", 10, "bold"),background="#B7410E",fg="white", command=lambda:openFolder(textbox_test,"test"))
-    button_browseVal = tk.Button(val_frame, text="Browse",font=("Arial", 10, "bold"),background="#B7410E",fg="white", command=lambda:openFolder(textbox_val,"val"))
+    button_browseTrainHR = tk.Button(trainHR_frame, text="Browse HR Training Data",font=("Arial", 8, "bold"),background="#B7410E",fg="white", command=lambda:openFolder(textbox_trainHR))
+    button_browseTrainLR = tk.Button(trainLR_frame, text="Browse LR Training Data",font=("Arial", 8, "bold"),background="#B7410E",fg="white", command=lambda:openFolder(textbox_trainLR))
+    button_browseValHR = tk.Button(val_frameHR, text="Browse HR Validate Data",font=("Arial", 8, "bold"),background="#B7410E",fg="white", command=lambda:openFolder(textbox_valHR))
+    button_browseValLR = tk.Button(val_frameLR,text="Browse LR Validate Data",font=("Arial",8,"bold"),background="#B7410E",fg="white",command=lambda:openFolder(textbox_valLR))
     #make a text box
-    textbox_train = tk.Text(train_frame, height=1, width=60,font=("Arial", 14, "bold"),fg="black")
-    textbox_test = tk.Text(test_frame, height=1, width=60,font=("Arial", 14, "bold"),fg="black")
-    textbox_val = tk.Text(val_frame, height=1, width=60,font=("Arial", 14, "bold"),fg="black")
-    
+    textbox_trainHR = tk.Text(trainHR_frame, height=1, width=60,font=("Arial", 14, "bold"),fg="black")
+    textbox_trainLR = tk.Text(trainLR_frame, height=1, width=60,font=("Arial", 14, "bold"),fg="black")
+    textbox_valHR = tk.Text(val_frameHR, height=1, width=60,font=("Arial", 14, "bold"),fg="black")
+    textbox_valLR = tk.Text(val_frameLR, height=1, width=60,font=("Arial", 14, "bold"),fg="black")
+
     label_Epoch = tk.Label(left_frame, text="Epoch:",font=("Arial", 10, "bold"),background="#FF9E3D",fg="black")
     label_LearningRate = tk.Label(left_frame, text="LearningRate:",font=("Arial", 10, "bold"),background="#FF9E3D",fg="black")
     label_Scale = tk.Label(left_frame, text="Scale:",font=("Arial", 10, "bold"),background="#FF9E3D",fg="black")
@@ -426,16 +471,19 @@ def page_train():
     textbox_LearningRate = tk.Text(left_frame, height=1, width=8,font=("Arial", 10, "bold"),fg="black")
     textbox_Scale = tk.Text(left_frame, height=1, width=4,font=("Arial", 10, "bold"),fg="black")
     textbox_BatchSize = tk.Text(left_frame, height=1, width=6,font=("Arial", 10, "bold"),fg="black")
-    checkbox_Shuffle = tk.Checkbutton(left_frame,background="#FF9E3D")
-    button_Train = tk.Button(left_frame, text="Train",height=1,width=10,font=("Arial", 15, "bold"),background="#B7410E",fg="white",command=lambda:plot_update())
+    checkStatus = tk.IntVar()
+    checkbox_Shuffle = tk.Checkbutton(left_frame,background="#FF9E3D",variable=checkStatus)
+    button_Train = tk.Button(left_frame, text="Train",height=1,width=10,font=("Arial", 15, "bold"),background="#B7410E",fg="white",command=lambda:fetchdata(textbox_BatchSize,checkStatus,textbox_LearningRate,textbox_Epoch,textbox_trainHR,textbox_trainLR,textbox_valHR,textbox_valLR))
     
     button_back.pack(side=tk.LEFT, anchor=tk.NW)
-    button_browseTrain.pack(side=tk.RIGHT, anchor=tk.NE)
-    button_browseTest.pack(side=tk.RIGHT,anchor=tk.NE)
-    button_browseVal.pack(side=tk.RIGHT,anchor=tk.NE)
-    textbox_test.pack(side=tk.TOP, anchor=tk.N)
-    textbox_train.pack(side=tk.TOP, anchor=tk.N)
-    textbox_val.pack(side=tk.TOP, anchor=tk.N)
+    button_browseTrainHR.pack(side=tk.RIGHT, anchor=tk.NE)
+    button_browseTrainLR.pack(side=tk.RIGHT,anchor=tk.NE)
+    button_browseValHR.pack(side=tk.RIGHT,anchor=tk.NE)
+    button_browseValLR.pack(side=tk.RIGHT,anchor=tk.NE)
+    textbox_trainHR.pack(side=tk.TOP, anchor=tk.N)
+    textbox_trainLR.pack(side=tk.TOP, anchor=tk.N)
+    textbox_valHR.pack(side=tk.TOP, anchor=tk.N)
+    textbox_valLR.pack(side=tk.TOP,anchor=tk.N)
     
     label_Epoch.grid(row=0, column=0, sticky="W", padx=0, pady=20)
     textbox_Epoch.grid(row=0, column=1, sticky="E", padx=0, pady=20)
