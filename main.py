@@ -5,6 +5,7 @@ import numpy as np
 from torchvision.utils import save_image
 import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
+import torchvision.datasets as datasets
 import math
 import torch.optim as optim
 import time
@@ -14,6 +15,7 @@ import tkinter as tk
 from tkinter import filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
 
 r = 4
 q = 0.75
@@ -24,8 +26,10 @@ r2 = 0.25
 video = 204
 learning_rate = 0.00001
 epoch = 10
-trainloader = None
-valloader = None
+trainloaderHR = None
+trainloaderLR = None
+valloaderHR = None
+valloaderLR = None
 
 x_train = []
 y_train = []
@@ -102,20 +106,39 @@ def fetchdata(batch,shuffle,learningRate,eepoch,trainlocHR,trainlocLR,vallocHR,v
     trainlocHR = trainlocHR.get("1.0", "end-1c")
     vallocHR = vallocHR.get("1.0", "end-1c")
     vallocLR = vallocLR.get("1.0", "end-1c")
+
+    #remove this----------------------------------------------------
+    #batch = 20
+    #shuffle = True
+    #learningRate = 0.00001
+    #eepoch = 10
+    #trainlocHR = "C:/Users/123li/Downloads/train_sharp/train/train_sharp"
+    #trainlocLR = "C:/Users/123li/Downloads/train_sharp_bicubic/train/train_sharp_bicubic/X4"
+    #vallocHR = "C:/Users/123li/Downloads/val_sharp/val/val_sharp"
+    #vallocLR = "C:/Users/123li/Downloads/val_sharp_bicubic/val/val_sharp_bicubic/X4"
+    #-remove this---------------------------------------------------
+
     trainsetLR = ImageFolder(root=trainlocLR, transform=tf)
     trainsetHR = ImageFolder(root=trainlocHR, transform=tf)
     trainsetvalHR = ImageFolder(root=vallocHR, transform=tf)
     trainsetvalLR = ImageFolder(root = vallocLR, transform = tf)
-    
+
+
+
+
     print("Loading Training set...")
-    global trainloader,valloader,learning_rate,epoch
+    global trainloaderHR,trainloaderLR,valloaderHR,valloaderLR,learning_rate,epoch
     learning_rate = learningRate
     epoch = eepoch
     
-    trainloader = torch.utils.data.DataLoader(list(zip(trainsetLR,trainsetHR)),batch_size=batch, shuffle=shuffle)
-    print("Done loading training data... Loading validation set...")
-    valloader = torch.utils.data.DataLoader(list(zip(trainsetvalLR,trainsetvalHR)),batch_size=batch, shuffle=shuffle)
+    
+    trainloaderHR = torch.utils.data.DataLoader(trainsetHR, batch_size=batch, shuffle=shuffle, num_workers=0)
+    trainloaderLR = torch.utils.data.DataLoader(trainsetLR, batch_size=batch, shuffle=shuffle, num_workers=0)
+    valloaderHR = torch.utils.data.DataLoader(trainsetvalHR, batch_size=batch, shuffle=shuffle, num_workers=0)
+    valloaderLR = torch.utils.data.DataLoader(trainsetvalLR, batch_size=batch, shuffle=shuffle, num_workers=0)
     print("Done loading data :D")
+    #print trainloader size
+    #trainingRED()
 
     t1 = threading.Thread(target=trainingRED)
     t2 = threading.Thread(target=trainingGREEN)
@@ -125,13 +148,14 @@ def fetchdata(batch,shuffle,learningRate,eepoch,trainlocHR,trainlocLR,vallocHR,v
     t2.start()
     t3.start()
 
-    t1.join()
-    t2.join()
-    t3.join()
+    #t1.join()
+    #t2.join()
+    #t3.join()
+    
     
 
 
-#torch.autograd.set_detect_anomaly(True)
+torch.autograd.set_detect_anomaly(True)
     
 class LERN(nn.Module):
     def __init__(self):
@@ -257,39 +281,46 @@ def trainingRED():
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
     net.to(device)
-    hidden = net.init_hidden(32,32).to(device)
+    hidden = net.init_hidden(trainloaderLR.dataset[0][0][0].shape[0],trainloaderLR.dataset[0][0][0].shape[1]).to(device)
+    totalit = len(trainloaderLR) * trainloaderLR.batch_size
     for y in range(epoch):
-
+        print("Epoch: ",y,"/",epoch)
         Train_loss = 0
         Val_loss = 0
-        for trainLR,trainHR in trainloader:  
+        train_Count = 0
+        val_Count = 0
+        for (trainLR,trainHR) in zip(trainloaderLR,trainloaderHR):
+            
+            #calculates how many iterations are left
+            print("Iterations left: ",totalit - train_Count)
             optimizer.zero_grad()
             trainLR = trainLR[0][:, 0, :, :].to(device)
             trainHR = trainHR[0][:,0,:,:].to(device)
-            trainvalHR = trainvalHR[0][:,0,:,:].to(device)
-            trainvalLR = trainvalLR[0][:,0,:,:].to(device)
             for i in range(trainLR.shape[0]-1):
                 output,hidden = net(trainLR[i].unsqueeze(0),trainLR[i+1].unsqueeze(0),hidden.detach())
                 loss = criterion(output, trainHR[i].unsqueeze(0))
                 loss.backward()
                 optimizer.step()
                 Train_loss += loss
-                #training loss calculated
-        Train_loss = Train_loss/trainLR.shape[0]
-        y_train.append(Train_loss)
-        x_train.append(y)
+                train_Count += 1
 
+                #training loss calculated
+        Train_loss = Train_loss/train_Count
+        y_train.append(Train_loss.detach().cpu().numpy())
+        x_train.append(y)
+        plot_update()
         with torch.no_grad():
-            for(valLR,valHR) in valloader:
+            for(valLR,valHR) in zip(valloaderLR,valloaderHR):
                 valLR = valLR[0][:, 0, :, :].to(device)
                 valHR = valHR[0][:,0,:,:].to(device)
                 for i in range(valLR.shape[0]-1):
                     output,hidden = net(valLR[i].unsqueeze(0),valLR[i+1].unsqueeze(0),hidden.detach())
                     loss = criterion(output, valHR[i].unsqueeze(0))
                     Val_loss += loss
+                    val_Count += 1
                     #validation loss calculated
-            Val_loss = Val_loss/valLR.shape[0]
-            y_val.append(Val_loss)
+            Val_loss = Val_loss/val_Count
+            y_val.append(Val_loss.detach().cpu().numpy())
             x_val.append(y)
             plot_update()
 
@@ -303,10 +334,10 @@ def trainingGREEN():
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
     net.to(device)
-    hidden = net.init_hidden(32,32).to(device)
+    hidden = net.init_hidden(trainloaderLR.dataset[0][0][0].shape[0],trainloaderLR.dataset[0][0][0].shape[1]).to(device)
     x = 0 
     for y in range(epoch):
-        for trainLR,trainHR in trainloader:  
+        for (trainLR,trainHR) in zip(trainloaderLR,trainloaderHR):
             optimizer.zero_grad()
             trainLR = trainLR[0][:, 1, :, :].to(device)
             trainHR = trainHR[0][:,1,:,:].to(device)
@@ -325,10 +356,10 @@ def trainingBLUE():
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
     net.to(device)
-    hidden = net.init_hidden(32,32).to(device)
+    hidden = net.init_hidden(trainloaderLR.dataset[0][0][0].shape[0],trainloaderLR.dataset[0][0][0].shape[1]).to(device)
     x = 0 
     for y in range(epoch):
-        for trainLR,trainHR in trainloader:  
+        for (trainLR,trainHR) in zip(trainloaderLR,trainloaderHR): 
             optimizer.zero_grad()
             trainLR = trainLR[0][:, 2, :, :].to(device)
             trainHR = trainHR[0][:,2,:,:].to(device)
@@ -341,23 +372,23 @@ def trainingBLUE():
     torch.save(net.state_dict(), "modelBlue.pth")
     print("saved the blue model")   
 
-def testing():
-    filepath_train = "C:/Users/g123lietuvis5/Desktop/LR/Vid(0).mp4"
+def testing(Lr,HrLocation,modelLocation):
+    filepath_train = Lr.get("1.0", "end-1c")
     videoFrameCount_train,videoWidth_train,videoHeight_train,videoFPS_train = get_videodetails(filepath_train)
     net_red = LERN()
-    net_red.load_state_dict(torch.load("modelRed.pth"))
+    net_red.load_state_dict(torch.load(modelLocation.get("1.0","end-1c")+"/modelRed.pth"))
     net_red.to(device)
     hidden_red = net_red.init_hidden(videoHeight_train,videoWidth_train).to(device)
     net_green = LERN()
-    net_green.load_state_dict(torch.load("modelGreen.pth"))
+    net_green.load_state_dict(torch.load(modelLocation.get("1.0","end-1c")+"/modelGreen.pth"))
     net_green.to(device)
     hidden_green = net_green.init_hidden(videoHeight_train,videoWidth_train).to(device)
     net_blue = LERN()
-    net_blue.load_state_dict(torch.load("modelBlue.pth"))
+    net_blue.load_state_dict(torch.load(modelLocation.get("1.0","end-1c")+"/modelBlue.pth"))
     net_blue.to(device)
     hidden_blue = net_blue.init_hidden(videoHeight_train,videoWidth_train).to(device)
     
-    out = cv2.VideoWriter('C:/Users/g123lietuvis5/Desktop/LR/output.mp4',cv2.VideoWriter_fourcc(*'mp4v'), videoFPS_train, (videoWidth_train*r,videoHeight_train*r))
+    out = cv2.VideoWriter((HrLocation.get("1.0","end-1c") + "/output.mp4"),cv2.VideoWriter_fourcc(*'mp4v'), videoFPS_train, (videoWidth_train*r,videoHeight_train*r))
     batch_count = math.ceil(videoFrameCount_train/20)
     
     for x in range(batch_count):
@@ -388,6 +419,12 @@ def openFolder(inp):
     file = filedialog.askdirectory()
     inp.insert(tk.END, file)
         
+def openFile(inp):
+    inp.delete("1.0", tk.END)
+    #open videos only
+    file = filedialog.askopenfilename(filetypes = (("Video files","*.mp4"),("all files","*.*")))
+    inp.insert(tk.END, file)
+
 def leaveandclose(page1,page2):
     
     page2.deiconify() 
@@ -399,8 +436,8 @@ def generate_plot():
     temp = figure.add_subplot(111)
     if(len(x_train) > 0):
         temp.plot(x_train, y_train, label="Training Loss", color="red")
-        temp.xlabel("Epoch")
-        temp.ylabel("Loss")
+        #temp.xlabel("Epoch")
+        #temp.ylabel("Loss")
     if(len(x_val) > 0):
         temp.plot(x_val, y_val, label="Validation Loss", color="green")
     return figure
@@ -413,14 +450,15 @@ def plot_update():
     canvas = FigureCanvasTkAgg(fig, master=right_frame)
     canvas.draw()
     canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
-    
+    bar = NavigationToolbar2Tk(canvas, right_frame)
+    bar.update()
+    canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
 
 
 
 def page_train():
     print("Preparing to train the Lern network")
     Main_window.withdraw()
-    
     Train_window = tk.Toplevel()
     Train_window.title("Training the Lern network")
     Train_window.configure(background="#FF9E3D")
@@ -499,7 +537,7 @@ def page_train():
     
     plot_update()
     
-    Train_window.geometry("700x500")
+    Train_window.geometry("700x700")
     
     
 def page_test():
@@ -508,8 +546,40 @@ def page_test():
     Test_window = tk.Toplevel()
     Test_window.title("Testing the Lern network")
     Test_window.configure(background="#FF9E3D")
-    button_back = tk.Button(Test_window, text="Back", command=lambda:leaveandclose(Test_window,Main_window))
-    button_back.pack()
+    top_frame = tk.Frame(Test_window, width=700, height=100,background="#FF9E3D")
+    top_frame.pack(side=tk.TOP, fill=tk.BOTH)
+    backbutton_frame = tk.Frame(top_frame, width=200, height=50,background="#FF9E3D")
+    backbutton_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=10, pady=0)
+
+    LRvid_frame = tk.Frame(top_frame, width=700, height=50,background="#FF9E3D")
+    LRvid_frame.pack(side=tk.TOP, fill=tk.BOTH, padx=10, pady=0)
+    HRvid_frame = tk.Frame(top_frame, width=700, height=50,background="#FF9E3D")
+    HRvid_frame.pack(side=tk.TOP, fill=tk.BOTH, padx=10, pady=0)
+    model_frame = tk.Frame(top_frame,width= 700, height=50,background="#FF9E3D")
+    model_frame.pack(side=tk.TOP, fill=tk.BOTH, padx=10, pady=0)
+    run_frame = tk.Frame(top_frame, width=700, height=50,background="#FF9E3D")
+    run_frame.pack(side=tk.TOP, fill=tk.BOTH, padx=10, pady=0)
+
+    textbox_loadLR = tk.Text(LRvid_frame, height=1, width=60,font=("Arial", 10, "bold"),fg="black")
+    textbox_outputHR = tk.Text(HRvid_frame, height=1, width=60,font=("Arial", 10, "bold"),fg="black")
+    textbox_model = tk.Text(model_frame, height=1, width=60,font=("Arial", 10, "bold"),fg="black")
+    
+    button_browseLRvid = tk.Button(LRvid_frame, text="Browse Video for upscaling",font=("Arial", 8, "bold"),background="#B7410E",fg="white", command=lambda:openFile(textbox_loadLR))
+    button_browseHRout = tk.Button(HRvid_frame, text="Browse output folder",font=("Arial", 8, "bold"),background="#B7410E",fg="white", command=lambda:openFolder(textbox_outputHR))
+    button_browseModel = tk.Button(model_frame, text="Browse Model folder",font=("Arial", 8, "bold"),background="#B7410E",fg="white", command=lambda:openFolder(textbox_model))
+    button_back = tk.Button(backbutton_frame, text="Back",font=("Arial", 10, "bold"),background="#B7410E",fg="white", command=lambda:leaveandclose(Test_window,Main_window))
+    button_run = tk.Button(run_frame, text="Run",font=("Arial", 10, "bold"),background="#B7410E",fg="white", command=lambda:testing(textbox_loadLR,textbox_outputHR,textbox_model))
+    button_back.pack(side=tk.LEFT, anchor=tk.NW)
+    button_browseLRvid.pack(side=tk.RIGHT, anchor=tk.NW)
+    textbox_outputHR.pack(side=tk.LEFT, anchor=tk.NW)
+    button_browseHRout.pack(side=tk.RIGHT, anchor=tk.NW)
+    textbox_loadLR.pack(side=tk.LEFT, anchor=tk.NW)
+    button_browseModel.pack(side=tk.RIGHT, anchor=tk.NW)
+    textbox_model.pack(side=tk.LEFT, anchor=tk.NW)
+    button_run.pack(side=tk.RIGHT, anchor=tk.NW)
+
+    
+    
     Test_window.geometry("700x500")
     
 
@@ -525,7 +595,7 @@ def Main():
     button_test = tk.Button(Main_window, text="Test the Lern network", font=("Arial", 15, "bold"),background="#B7410E",fg="white", command=page_test)
     label_title.pack()
     button_train.pack(side=tk.RIGHT)
-    button_test.pack( side=tk.LEFT)
+    button_test.pack(side=tk.LEFT)
     
     #button_train.pack()
     #button_test.pack()
@@ -535,18 +605,6 @@ def Main():
     Main_window.mainloop()
         
 Main()
-#run thread for each colour
-#t1 = threading.Thread(target=trainingRED)
-#t2 = threading.Thread(target=trainingGREEN)
-#t3 = threading.Thread(target=trainingBLUE)
-
-#t1.start()
-#t2.start()
-#t3.start()
-
-#t1.join()
-#t2.join()
-#t3.join()
 
 #thread for testing
 #t4 = threading.Thread(target=testing)
