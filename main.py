@@ -24,7 +24,7 @@ r1 = 0.5
 r2 = 0.25
 
 video = 204
-learning_rate = 0.00001
+learning_rate = 0.00005
 epoch = 10
 trainloaderHR = None
 trainloaderLR = None
@@ -108,10 +108,10 @@ def fetchdata(batch,shuffle,learningRate,eepoch,trainlocHR,trainlocLR,vallocHR,v
     vallocLR = vallocLR.get("1.0", "end-1c")
 
     #remove this----------------------------------------------------
-    #batch = 20
+    #batch = 10
     #shuffle = True
-    #learningRate = 0.00001
-    #eepoch = 10
+    #learningRate = 0.001
+    #eepoch = 200
     #trainlocHR = "C:/Users/123li/Downloads/train_sharp/train/train_sharp"
     #trainlocLR = "C:/Users/123li/Downloads/train_sharp_bicubic/train/train_sharp_bicubic/X4"
     #vallocHR = "C:/Users/123li/Downloads/val_sharp/val/val_sharp"
@@ -165,7 +165,6 @@ class LERN(nn.Module):
         self.pixel_shuffle = nn.PixelShuffle(r)
         self.pixel_shuffle2 = nn.PixelShuffle(r**2)
         self.conv1 = nn.ConvTranspose2d(round(r**2),round(32*q),kernel_size=3,stride=1,padding=1)
-        #self.concatinate = nn.Concatinate()
 
         #hst-1
         self.conv2 = nn.Conv2d(round(r**4),round(32*(1-q)),kernel_size=3,stride=1,padding=1)
@@ -174,38 +173,46 @@ class LERN(nn.Module):
         #sra 32
         self.leaky_relu = nn.LeakyReLU(0.25)
         #3x3dsconv&relu depthwise separable convolution 
-        self.conv3 = nn.ConvTranspose2d(32,round(32*r1),kernel_size=3,stride=1,padding=1,groups=round(r**2))
+        #depthwise separable convolution
+
+        self.conv3_dep = nn.Conv2d(32,32,kernel_size=3,stride=1,padding=1,groups=32)#depthwise convolution
+        self.conv3_point = nn.Conv2d(32,round(32*r1),kernel_size=1,stride=1,padding=0)#pointwise convolution
         #channel shuffle
-        self.channel_shuffle = nn.ChannelShuffle(r)
+        #self.channel_shuffle = nn.ChannelShuffle(3)
 
-        self.conv4 = nn.Conv2d(round(32*r1),32,kernel_size=3,stride=1,padding=1,groups=round(r**2))
-
+        self.conv4_dep = nn.Conv2d(round(32*r1),round(32*r1),kernel_size=3,stride=1,padding=1,groups=round(32*r1))#depthwise convolution
+        self.conv4_point = nn.Conv2d(round(32*r1),32,kernel_size=1,stride=1,padding=0)#pointwise convolution
         #attention block
-        #self.globalaverage = nn.GlobalAveragePool2d()
+        self.globalaverage = nn.AdaptiveAvgPool2d(1)
         self.conv5 = nn.ConvTranspose2d(32,round(32*r2),kernel_size=3,stride=1,padding=1)
 
         self.conv6 = nn.Conv2d(round(32*r2),32,kernel_size=3,stride=1,padding=1)
         self.sigmoid = nn.Sigmoid()
-        #
-        self.conv7 = nn.ConvTranspose2d(32,round(16*p),kernel_size=3,stride=1,padding=1)
+
+        self.conv7_dep = nn.Conv2d(32,32,kernel_size=3,stride=1,padding=1,groups=32)#depthwise convolution
+        self.conv7_point = nn.Conv2d(32,round(16*p),kernel_size=1,stride=1,padding=0)#pointwise convolution
 
         #lrt+1
         self.conv8 = nn.Conv2d(round(r**2),round(16*(1-p)),kernel_size=3,stride=1,padding=1)
 
         #sra 16
-        self.conv9 = nn.ConvTranspose2d(16,round(16*r1),kernel_size=3,stride=1,padding=1)
-        self.conv10 = nn.Conv2d(round(16*r1),16,kernel_size=3,stride=1,padding=1)
-        self.conv11 = nn.ConvTranspose2d(16,round(16*r2),kernel_size=3,stride=1,padding=1)
+        self.conv9_dep = nn.Conv2d(16,16,kernel_size=3,stride=1,padding=1,groups=16)#depthwise convolution
+        self.conv9_point = nn.Conv2d(16,round(16*r1),kernel_size=1,stride=1,padding=0)#pointwise convolution
+
+        self.conv10_dep = nn.Conv2d(round(16*r1),round(16*r1),kernel_size=3,stride=1,padding=1,groups=round(16*r1))#depthwise convolution
+        self.conv10_point = nn.Conv2d(round(16*r1),16,kernel_size=1,stride=1,padding=0)#pointwise convolution
+        self.conv11 = nn.Conv2d(16,round(16*r2),kernel_size=3,stride=1,padding=1)
         self.conv12 = nn.Conv2d(round(16*r2),16,kernel_size=3,stride=1,padding=1)
         #
+        self.conv13_dep = nn.Conv2d(16,16,kernel_size=3,stride=1,padding=1,groups=16)#depthwise convolution
+        self.conv13_point = nn.Conv2d(16,8,kernel_size=1,stride=1,padding=0)#pointwise convolution
 
-        #self.conv13 = nn.ConvTranspose2d(16,8,kernel_size=3,stride=1,padding=1,groups=round(r**2))
-        #self.conv14 = nn.ConvTranspose2d(8,round(r**4),kernel_size=3,stride=1,padding=1,groups=round(r**2))
-        self.conv13 = nn.ConvTranspose2d(16,8,kernel_size=3,stride=1,padding=1)
-        self.conv14 = nn.Conv2d(8,round(r**4),kernel_size=3,stride=1,padding=1)
-
+        self.linear1 = nn.Linear(8,8)
+        self.conv14_dep = nn.Conv2d(8,8,kernel_size=3,stride=1,padding=1,groups=8)#depthwise convolution
+        self.conv14_point = nn.Conv2d(8,round(r**4),kernel_size=1,stride=1,padding=0)#pointwise convolution
         #nets
-        self.conv15 = nn.ConvTranspose2d(1,round(r**2),kernel_size=3,stride=1,padding=1)
+        
+        self.conv15 = nn.Conv2d(1,round(r**2),kernel_size=3,stride=1,padding=1)
 
         
     def init_hidden(self,videoHeight_train,videoWidth_train):
@@ -216,19 +223,26 @@ class LERN(nn.Module):
         lrt1 = x1
         hstt = htt
         #top of neth
-        lrt = self.pixel_unshuffle(lrt)
+        lrt = self.pixel_unshuffle(lrt) # 1 channel
         lrt = self.conv1(lrt)
         
         hstt = self.conv2(hstt)
         lrt = torch.cat((lrt,hstt),0)
-        #sra part 32 
+        #sra Channel 32--- 
         lrrt = lrt
         lrt = self.leaky_relu(lrt)
-        lrt = self.leaky_relu(self.conv3(lrt))
+        lrt = self.conv3_dep(lrt)
+        lrt = self.conv3_point(lrt)
+        lrt = self.leaky_relu(lrt)
+        
         #lrt = self.channel_shuffle(lrt)
-        lrt = self.conv4(lrt)
+
+        lrt = self.conv4_dep(lrt)
+        lrt = self.conv4_point(lrt)
         #lrt = self.channel_shuffle(lrt)
+        #attention block
         lrrrt = lrt
+        lrt = self.globalaverage(lrt)
         lrt = self.conv5(lrt)
         lrt = self.leaky_relu(lrt)
         lrt = self.conv6(lrt)
@@ -236,9 +250,10 @@ class LERN(nn.Module):
         lrt = lrrrt*lrt
         lrt = lrrt+lrt
         #
-
-        lrt = self.conv7(lrt)
-
+        lrt = self.leaky_relu(lrt)
+        lrt = self.conv7_dep(lrt)
+        lrt = self.conv7_point(lrt)
+        
         #lrt+1
         lrt1 = self.pixel_unshuffle(lrt1)
         lrt1 = self.conv8(lrt1)
@@ -248,11 +263,16 @@ class LERN(nn.Module):
         #sra part 16
         lrrt = lrt
         lrt = self.leaky_relu(lrt)
-        lrt = self.leaky_relu(self.conv9(lrt))
+        #lrt = self.leaky_relu(self.conv9(lrt))
+        lrt = self.conv9_dep(lrt)
+        lrt = self.conv9_point(lrt)
+        lrt = self.leaky_relu(lrt)
         #lrt = self.channel_shuffle(lrt)
-        lrt = self.conv10(lrt)
+        lrt = self.conv10_dep(lrt)
+        lrt = self.conv10_point(lrt)
         #lrt = self.channel_shuffle(lrt)
         lrrrt = lrt
+        lrt = self.globalaverage(lrt)
         lrt = self.conv11(lrt)
         lrt = self.leaky_relu(lrt)
         lrt = self.conv12(lrt)
@@ -260,8 +280,13 @@ class LERN(nn.Module):
         lrt = lrrrt*lrt
         lrt = lrrt+lrt
         #
-        lrt = self.conv13(lrt)
-        lrt = self.conv14(lrt)
+        lrt = self.leaky_relu(lrt)
+        lrt = self.conv13_dep(lrt)
+        lrt = self.conv13_point(lrt)
+
+        lrt = self.leaky_relu(lrt)
+        lrt = self.conv14_dep(lrt)
+        lrt = self.conv14_point(lrt)
         lrt = self.leaky_relu(lrt)
         hstt = lrt
 
@@ -269,7 +294,7 @@ class LERN(nn.Module):
         x = self.conv15(x)
         x = self.pixel_shuffle(x)
         lrt = self.pixel_shuffle2(lrt)
-        x = x+lrt
+        x = lrt+x
 
         #self.hst = hstt
 
@@ -278,16 +303,18 @@ class LERN(nn.Module):
 start = time.time()
 def trainingRED():
     net = LERN()
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=0.0001,amsgrad=True)
     criterion = nn.MSELoss()
     net.to(device)
     hidden = net.init_hidden(trainloaderLR.dataset[0][0][0].shape[0],trainloaderLR.dataset[0][0][0].shape[1]).to(device)
     totalit = len(trainloaderLR) * trainloaderLR.batch_size
+
     for y in range(epoch):
         print("Epoch: ",y,"/",epoch)
-        Train_loss = 0
+        PSNR_train = 0
         Val_loss = 0
         train_Count = 0
+        
         val_Count = 0
         for (trainLR,trainHR) in zip(trainloaderLR,trainloaderHR):
             
@@ -301,12 +328,17 @@ def trainingRED():
                 loss = criterion(output, trainHR[i].unsqueeze(0))
                 loss.backward()
                 optimizer.step()
-                Train_loss += loss
+                mse = torch.mean((output - trainHR[i])**2)
+                psnr = 20 * math.log10(1.0 / math.sqrt(mse.item()))
+                print("PSNR train: ",psnr)
+
+                PSNR_train += psnr
                 train_Count += 1
 
                 #training loss calculated
-        Train_loss = Train_loss/train_Count
-        y_train.append(Train_loss.detach().cpu().numpy())
+        PSNR_train = PSNR_train/train_Count
+        print("PSNR_Train: ",PSNR_train)
+        y_train.append(PSNR_train)
         x_train.append(y)
         plot_update()
         with torch.no_grad():
@@ -316,11 +348,16 @@ def trainingRED():
                 for i in range(valLR.shape[0]-1):
                     output,hidden = net(valLR[i].unsqueeze(0),valLR[i+1].unsqueeze(0),hidden.detach())
                     loss = criterion(output, valHR[i].unsqueeze(0))
-                    Val_loss += loss
+
+                    mse = torch.mean((output - valHR[i])**2)
+                    psnr = 20 * math.log10(1.0 / math.sqrt(mse.item()))
+                    print("PSNR Val: ",psnr)
+                    Val_loss += psnr
                     val_Count += 1
+
                     #validation loss calculated
             Val_loss = Val_loss/val_Count
-            y_val.append(Val_loss.detach().cpu().numpy())
+            y_val.append(Val_loss)
             x_val.append(y)
             plot_update()
 
@@ -331,7 +368,7 @@ def trainingRED():
 
 def trainingGREEN():
     net = LERN()
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=0.0001,amsgrad=True)
     criterion = nn.MSELoss()
     net.to(device)
     hidden = net.init_hidden(trainloaderLR.dataset[0][0][0].shape[0],trainloaderLR.dataset[0][0][0].shape[1]).to(device)
@@ -353,7 +390,7 @@ def trainingGREEN():
 
 def trainingBLUE():
     net = LERN()
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=0.0001,amsgrad=True)
     criterion = nn.MSELoss()
     net.to(device)
     hidden = net.init_hidden(trainloaderLR.dataset[0][0][0].shape[0],trainloaderLR.dataset[0][0][0].shape[1]).to(device)
@@ -596,9 +633,6 @@ def Main():
     label_title.pack()
     button_train.pack(side=tk.RIGHT)
     button_test.pack(side=tk.LEFT)
-    
-    #button_train.pack()
-    #button_test.pack()
     
     Main_window.geometry("600x300")
     Main_window.configure(background="#FF9E3D")
