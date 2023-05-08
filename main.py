@@ -435,8 +435,7 @@ def testing(Lr,HrLocation,modelLocation):
     net_red.to(device)
     net_green.to(device)
     net_blue.to(device)
-    net_red.load_state_dict(torch.load(modelLocation.get("1.0","end-1c")+"/modelRed.pth"))
-    net_red.to(device)
+
     hidden_red = net_red.init_hidden(videoHeight_train,videoWidth_train).to(device)
     hidden_green = net_green.init_hidden(videoHeight_train,videoWidth_train).to(device)
     hidden_blue = net_blue.init_hidden(videoHeight_train,videoWidth_train).to(device)
