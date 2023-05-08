@@ -47,7 +47,7 @@ else:
     print("Using CPU")
 
 
-def get_videodetails(video_path):
+def get_videodetails(video_path):#gets the video details
     capture = cv2.VideoCapture(video_path)
     framecount = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -57,32 +57,32 @@ def get_videodetails(video_path):
     return framecount, width, height, fps
 
 def video_to_tensor(video_path,batch_number):
-    capture = cv2.VideoCapture(video_path)
+    capture = cv2.VideoCapture(video_path)#opens the video using opencv
     framecount = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-    #batch_count = math.ceil(framecount/batch)
+
     frame_r_list = []
     frame_g_list = []
     frame_b_list = []
     for i in range(20):
-        frame_index = 20 * batch_number + i
-        if frame_index >= framecount:
+        frame_index = 20 * batch_number + i#gets the frame index
+        if frame_index >= framecount:#checks if the frame index is greater than the frame count
             print("Frame end reached!!!")
             break
         capture.set(cv2.CAP_PROP_POS_FRAMES,frame_index)
 
         out, frame = capture.read()
-        frame = torch.from_numpy(frame).permute(2, 0, 1).float().to(device)
+        frame = torch.from_numpy(frame).permute(2, 0, 1).float().to(device)#converts the frame to a tensor
     
-        frame_r = frame[0].unsqueeze(0)
+        frame_r = frame[0].unsqueeze(0)#splits the frame into 3 channels
         frame_g = frame[1].unsqueeze(0)
         frame_b = frame[2].unsqueeze(0)
         if not out:
             print("Error reading frame")
-            #Add save of models just in case of an error mid training
-        frame_r_list.append(frame_r)
+            
+        frame_r_list.append(frame_r)#appends the frames to a list
         frame_g_list.append(frame_g)
         frame_b_list.append(frame_b)
-    frame_r = torch.cat(frame_r_list, dim=0).to(device)
+    frame_r = torch.cat(frame_r_list, dim=0).to(device)#concatenates the frames into a tensor
     frame_g = torch.cat(frame_g_list, dim=0).to(device)
     frame_b = torch.cat(frame_b_list, dim=0).to(device)
     
@@ -94,53 +94,39 @@ tf = transforms = transforms.Compose([
     #transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
 ])
 
-def fetchdata(batch,shuffle,learningRate,eepoch,trainlocHR,trainlocLR,vallocHR,vallocLR):
+def fetchdata(batch,shuffle,learningRate,eepoch,trainlocHR,trainlocLR,vallocHR,vallocLR):#fetches the data from the GUI
     
-    batch = batch.get("1.0", "end-1c")
+    batch = batch.get("1.0", "end-1c")#gets the batch size and shuffle
     batch = int(batch)
     shuffle = shuffle.get()
-    learningRate = learningRate.get("1.0", "end-1c")
+    learningRate = learningRate.get("1.0", "end-1c")#gets the learning rate and number of epochs
     learningRate = float(learningRate)
     eepoch = eepoch.get("1.0", "end-1c")
     eepoch = int(eepoch)
-    trainlocLR = trainlocLR.get("1.0","end-1c")
+    trainlocLR = trainlocLR.get("1.0","end-1c")#gets the location of the training and validation set
     trainlocHR = trainlocHR.get("1.0", "end-1c")
     vallocHR = vallocHR.get("1.0", "end-1c")
     vallocLR = vallocLR.get("1.0", "end-1c")
-    #remove this----------------------------------------------------
-    #batch = 10
-    #shuffle = True
-    #learningRate = 0.001
-    #eepoch = 200
-    #trainlocHR = "C:/Users/123li/Downloads/train_sharp/train/train_sharp"
-    #trainlocLR = "C:/Users/123li/Downloads/train_sharp_bicubic/train/train_sharp_bicubic/X4"
-    #vallocHR = "C:/Users/123li/Downloads/val_sharp/val/val_sharp"
-    #vallocLR = "C:/Users/123li/Downloads/val_sharp_bicubic/val/val_sharp_bicubic/X4"
-    #-remove this---------------------------------------------------
 
-    trainsetLR = ImageFolder(root=trainlocLR, transform=tf)
+    trainsetLR = ImageFolder(root=trainlocLR, transform=tf)#creates dataset for training
     trainsetHR = ImageFolder(root=trainlocHR, transform=tf)
     trainsetvalHR = ImageFolder(root=vallocHR, transform=tf)
     trainsetvalLR = ImageFolder(root = vallocLR, transform = tf)
 
 
-
-
-    print("Loading Training set...")
     global trainloaderHR,trainloaderLR,valloaderHR,valloaderLR,learning_rate,epoch
     learning_rate = learningRate
     epoch = eepoch
     
     
-    trainloaderHR = torch.utils.data.DataLoader(trainsetHR, batch_size=batch, shuffle=shuffle, num_workers=0)
+    trainloaderHR = torch.utils.data.DataLoader(trainsetHR, batch_size=batch, shuffle=shuffle, num_workers=0)#creates dataloader for training
     trainloaderLR = torch.utils.data.DataLoader(trainsetLR, batch_size=batch, shuffle=shuffle, num_workers=0)
-    valloaderHR = torch.utils.data.DataLoader(trainsetvalHR, batch_size=batch, shuffle=shuffle, num_workers=0)
+    valloaderHR = torch.utils.data.DataLoader(trainsetvalHR, batch_size=batch, shuffle=shuffle, num_workers=0)#creates dataloader for validation
     valloaderLR = torch.utils.data.DataLoader(trainsetvalLR, batch_size=batch, shuffle=shuffle, num_workers=0)
-    print("Done loading data :D")
-    #print trainloader size
-    #trainingRED()
 
-    t1 = threading.Thread(target=trainingRED)
+
+
+    t1 = threading.Thread(target=trainingRED)#creates a thread for each color channel
     t2 = threading.Thread(target=trainingGREEN)
     t3 = threading.Thread(target=trainingBLUE)
 
@@ -148,16 +134,14 @@ def fetchdata(batch,shuffle,learningRate,eepoch,trainlocHR,trainlocLR,vallocHR,v
     t2.start()
     t3.start()
 
-    #t1.join()
-    #t2.join()
-    #t3.join()
+
     
     
 
 
-torch.autograd.set_detect_anomaly(True)
+torch.autograd.set_detect_anomaly(True)#detects anomaly in the model used for debuging
     
-class LERN(nn.Module):
+class LERN(nn.Module):#creates Lern model
     def __init__(self):
         super().__init__()
         
@@ -215,9 +199,9 @@ class LERN(nn.Module):
         self.conv15 = nn.Conv2d(1,round(r**2),kernel_size=3,stride=1,padding=1)
 
         
-    def init_hidden(self,videoHeight_train,videoWidth_train):
+    def init_hidden(self,videoHeight_train,videoWidth_train):#initializes hidden state
         return torch.rand(r**4,round(videoHeight_train/r),round(videoWidth_train/r)).to(device)    
-    def forward(self, x,x1,htt):        
+    def forward(self, x,x1,htt):#forward pass of the Lern model  
         #hstt = self.hst
         lrt = x
         lrt1 = x1
@@ -301,7 +285,7 @@ class LERN(nn.Module):
         return x,hstt
 
 start = time.time()
-def trainingRED():
+def trainingRED():#training function for RED
     net = LERN()
     optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=0.00001,amsgrad=True)
     criterion = nn.MSELoss()
@@ -368,7 +352,7 @@ def trainingRED():
     torch.save(net.state_dict(), "modelRed.pth")
     print("saved the red model")    
 
-def trainingGREEN():
+def trainingGREEN():#training function for GREEN
     net = LERN()
     optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=0.00001,amsgrad=True)
     criterion = nn.MSELoss()
@@ -393,12 +377,12 @@ def trainingGREEN():
     print("saved the green model")   
     
 
-def trainingBLUE():
+def trainingBLUE():#training function for BLUE
     net = LERN()
     optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=0.00001,amsgrad=True)
     criterion = nn.MSELoss()
     net.to(device)
-    hidden = net.init_hidden(trainloaderLR.dataset[0][0][0].shape[0],trainloaderLR.dataset[0][0][0].shape[1]).to(device)
+    hidden = net.init_hidden(trainloaderLR.dataset[0][0][0].shape[0],trainloaderLR.dataset[0][0][0].shape[1]).to(device)#initializes the hidden state
 
     for y in range(epoch):
         for (trainLR,trainHR) in zip(trainloaderLR,trainloaderHR): 
@@ -419,7 +403,6 @@ def trainingBLUE():
     print("saved the blue model")   
 
 def testing(Lr,HrLocation,modelLocation):
-    #device = torch.device("cpu")
     
     filepath_train = Lr.get("1.0", "end-1c")
     videoFrameCount_train,videoWidth_train,videoHeight_train,videoFPS_train = get_videodetails(filepath_train)
@@ -497,7 +480,7 @@ def leaveandclose(page1,page2):
     page2.deiconify() 
     page1.destroy()
     
-def generate_plot():
+def generate_plot():#this plots the training loss
     #this plots the training loss
     figure = Figure(figsize=(5, 5), dpi=100, facecolor="#FF9E3D", edgecolor="#FF9E3D")
     temp = figure.add_subplot(111)
@@ -510,7 +493,7 @@ def generate_plot():
     temp.legend()
     return figure
 
-def plot_update():
+def plot_update():#this updates the plot
     fig = generate_plot()
     for widget in right_frame.winfo_children():
         widget.destroy()
