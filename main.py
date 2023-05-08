@@ -17,6 +17,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
 
+
 r = 4
 q = 0.75
 p = 0.75
@@ -106,7 +107,6 @@ def fetchdata(batch,shuffle,learningRate,eepoch,trainlocHR,trainlocLR,vallocHR,v
     trainlocHR = trainlocHR.get("1.0", "end-1c")
     vallocHR = vallocHR.get("1.0", "end-1c")
     vallocLR = vallocLR.get("1.0", "end-1c")
-
     #remove this----------------------------------------------------
     #batch = 10
     #shuffle = True
@@ -172,7 +172,7 @@ class LERN(nn.Module):
 
         #sra 32
         self.leaky_relu = nn.LeakyReLU(0.25)
-        #3x3dsconv&relu depthwise separable convolution 
+
         #depthwise separable convolution
 
         self.conv3_dep = nn.Conv2d(32,32,kernel_size=3,stride=1,padding=1,groups=32)#depthwise convolution
@@ -303,7 +303,7 @@ class LERN(nn.Module):
 start = time.time()
 def trainingRED():
     net = LERN()
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=0.0001,amsgrad=True)
+    optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=0.00001,amsgrad=True)
     criterion = nn.MSELoss()
     net.to(device)
     hidden = net.init_hidden(trainloaderLR.dataset[0][0][0].shape[0],trainloaderLR.dataset[0][0][0].shape[1]).to(device)
@@ -331,9 +331,11 @@ def trainingRED():
                 mse = torch.mean((output - trainHR[i])**2)
                 psnr = 20 * math.log10(1.0 / math.sqrt(mse.item()))
                 print("PSNR train: ",psnr)
-
                 PSNR_train += psnr
                 train_Count += 1
+        print("done thread Red")
+        torch.save(net.state_dict(), "modelRed.pth")
+        print("saved the red model")  
 
                 #training loss calculated
         PSNR_train = PSNR_train/train_Count
@@ -368,11 +370,11 @@ def trainingRED():
 
 def trainingGREEN():
     net = LERN()
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=0.0001,amsgrad=True)
+    optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=0.00001,amsgrad=True)
     criterion = nn.MSELoss()
     net.to(device)
     hidden = net.init_hidden(trainloaderLR.dataset[0][0][0].shape[0],trainloaderLR.dataset[0][0][0].shape[1]).to(device)
-    x = 0 
+
     for y in range(epoch):
         for (trainLR,trainHR) in zip(trainloaderLR,trainloaderHR):
             optimizer.zero_grad()
@@ -383,6 +385,9 @@ def trainingGREEN():
                 loss = criterion(output, trainHR[i].unsqueeze(0))
                 loss.backward()
                 optimizer.step()
+        print("done thread green")
+        torch.save(net.state_dict(), "modelGreen.pth") 
+        print("saved the green model")   
     print("done thread green")
     torch.save(net.state_dict(), "modelGreen.pth") 
     print("saved the green model")   
@@ -390,11 +395,11 @@ def trainingGREEN():
 
 def trainingBLUE():
     net = LERN()
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=0.0001,amsgrad=True)
+    optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=0.00001,amsgrad=True)
     criterion = nn.MSELoss()
     net.to(device)
     hidden = net.init_hidden(trainloaderLR.dataset[0][0][0].shape[0],trainloaderLR.dataset[0][0][0].shape[1]).to(device)
-    x = 0 
+
     for y in range(epoch):
         for (trainLR,trainHR) in zip(trainloaderLR,trainloaderHR): 
             optimizer.zero_grad()
@@ -405,24 +410,35 @@ def trainingBLUE():
                 loss = criterion(output, trainHR[i].unsqueeze(0))
                 loss.backward()
                 optimizer.step()
+        print("done thread Blue")
+        torch.save(net.state_dict(), "modelBlue.pth")
+        print("saved the blue model")   
+
     print("done thread Blue")
     torch.save(net.state_dict(), "modelBlue.pth")
     print("saved the blue model")   
 
 def testing(Lr,HrLocation,modelLocation):
+    #device = torch.device("cpu")
+    
     filepath_train = Lr.get("1.0", "end-1c")
     videoFrameCount_train,videoWidth_train,videoHeight_train,videoFPS_train = get_videodetails(filepath_train)
+    
+    
     net_red = LERN()
+    net_green = LERN()
+    net_blue = LERN()
+    
+    net_red.load_state_dict(torch.load(modelLocation.get("1.0","end-1c")+"/modelRed.pth", map_location=torch.device('cpu')))
+    net_green.load_state_dict(torch.load(modelLocation.get("1.0","end-1c")+"/modelGreen.pth", map_location=torch.device('cpu')))
+    net_blue.load_state_dict(torch.load(modelLocation.get("1.0","end-1c")+"/modelBlue.pth", map_location=torch.device('cpu')))
+    net_red.to(device)
+    net_green.to(device)
+    net_blue.to(device)
     net_red.load_state_dict(torch.load(modelLocation.get("1.0","end-1c")+"/modelRed.pth"))
     net_red.to(device)
     hidden_red = net_red.init_hidden(videoHeight_train,videoWidth_train).to(device)
-    net_green = LERN()
-    net_green.load_state_dict(torch.load(modelLocation.get("1.0","end-1c")+"/modelGreen.pth"))
-    net_green.to(device)
     hidden_green = net_green.init_hidden(videoHeight_train,videoWidth_train).to(device)
-    net_blue = LERN()
-    net_blue.load_state_dict(torch.load(modelLocation.get("1.0","end-1c")+"/modelBlue.pth"))
-    net_blue.to(device)
     hidden_blue = net_blue.init_hidden(videoHeight_train,videoWidth_train).to(device)
     
     out = cv2.VideoWriter((HrLocation.get("1.0","end-1c") + "/output.mp4"),cv2.VideoWriter_fourcc(*'mp4v'), videoFPS_train, (videoWidth_train*r,videoHeight_train*r))
@@ -444,9 +460,24 @@ def testing(Lr,HrLocation,modelLocation):
             output[:,:,2] = output_blue
             out.write(output)
         #display video
-            cv2.imshow('frame',output)
+            original = np.zeros((videoHeight_train, videoWidth_train, 3), np.uint8)
+            original[:,:,0] = red_train[z].detach().cpu().numpy()
+            original[:,:,1] = green_train[z].detach().cpu().numpy()
+            original[:,:,2] = blue_train[z].detach().cpu().numpy()
+            
+            rs = cv2.resize(original, (600,400))
+            rs2 = cv2.resize(output, (600,400))
+            output = np.concatenate((rs,rs2), axis=1)
+            
+            
+            cv2.putText(output, 'Original', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+            cv2.putText(output, 'upscaled', (650, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+            resized = output / np.max(output)
+            cv2.imshow('frame',resized)
+            
             cv2.waitKey(1)
-
+    out.release()
+    cv2.destroyAllWindows()
 #GUI part of the code ----------------------------------------------------------------------------
 
 
@@ -473,10 +504,11 @@ def generate_plot():
     temp = figure.add_subplot(111)
     if(len(x_train) > 0):
         temp.plot(x_train, y_train, label="Training Loss", color="red")
-        #temp.xlabel("Epoch")
-        #temp.ylabel("Loss")
+        
     if(len(x_val) > 0):
         temp.plot(x_val, y_val, label="Validation Loss", color="green")
+        
+    temp.legend()
     return figure
 
 def plot_update():
@@ -522,8 +554,7 @@ def page_train():
 
     val_frameLR = tk.Frame(top_frame,width=700,height = 50,background="#FF9E3D")
     val_frameLR.pack(side=tk.TOP,fill=tk.BOTH,padx=10,pady=0)
-    
-    #backbutton_frame.pack_propagate(0)
+
     button_back = tk.Button(backbutton_frame, text="Back",font=("Arial", 10, "bold"),background="#B7410E",fg="white", command=lambda:leaveandclose(Train_window,Main_window))
     
     button_browseTrainHR = tk.Button(trainHR_frame, text="Browse HR Training Data",font=("Arial", 8, "bold"),background="#B7410E",fg="white", command=lambda:openFolder(textbox_trainHR))
@@ -640,9 +671,5 @@ def Main():
         
 Main()
 
-#thread for testing
-#t4 = threading.Thread(target=testing)
-#t4.start()
-#t4.join()
 print("done")
 
