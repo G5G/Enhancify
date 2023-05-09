@@ -30,7 +30,8 @@ If you want to train the Lern network yourself, follow these steps:
 4. Click "Train" to start the training process.
 5. The graph will update during training, with the green line representing validation and the red line representing training. The performance is measured in PSNR, so the higher the value, the better the performance.
 
-## Contact
+## Lern paper
 
-If you have any questions or issues with Enhancify, please contact us at [email address/website link/social media handle].
+Lern video super resolution paper [here] (https://ietresearch.onlinelibrary.wiley.com/doi/pdf/10.1049/ell2.12576)
+ 
 <p xmlns:cc="http://creativecommons.org/ns#" xmlns:dct="http://purl.org/dc/terms/"><a property="dct:title" rel="cc:attributionURL" href="https://github.com/G5G/Enhancify">Enhancify</a> by <a rel="cc:attributionURL dct:creator" property="cc:attributionName" href="https://github.com/G5G">Vilius Radavicius</a> is licensed under <a href="http://creativecommons.org/licenses/by-nc-sa/4.0/?ref=chooser-v1" target="_blank" rel="license noopener noreferrer" style="display:inline-block;">Attribution-NonCommercial-ShareAlike 4.0 International<img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/cc.svg?ref=chooser-v1"><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/by.svg?ref=chooser-v1"><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/nc.svg?ref=chooser-v1"><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/sa.svg?ref=chooser-v1"></a></p>
