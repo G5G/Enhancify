@@ -191,6 +191,7 @@ class LERN(nn.Module):#creates Lern model
         self.conv13_dep = nn.Conv2d(16,16,kernel_size=3,stride=1,padding=1,groups=16)#depthwise convolution
         self.conv13_point = nn.Conv2d(16,8,kernel_size=1,stride=1,padding=0)#pointwise convolution
 
+        self.linear1 = nn.Linear(8,8)
         self.conv14_dep = nn.Conv2d(8,8,kernel_size=3,stride=1,padding=1,groups=8)#depthwise convolution
         self.conv14_point = nn.Conv2d(8,round(r**4),kernel_size=1,stride=1,padding=0)#pointwise convolution
         #nets
